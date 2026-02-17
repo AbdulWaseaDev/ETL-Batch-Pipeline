@@ -1,0 +1,6 @@
+api:
+  url: "https://jsonplaceholder.typicode.com/posts"
+
+paths:
+  raw_data: "data/raw/posts.json"
+  processed_data: "data/processed/posts_clean.csv"
