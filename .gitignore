@@ -69,10 +69,7 @@ env/
 logs/
 
 # Data files
-*.csv
-*.xlsx
 *.parquet
-data/
 output/
 
 # OS files
