@@ -5,13 +5,16 @@ x-airflow-common: &airflow-common
     args:
       AIRFLOW_IMAGE: ${AIRFLOW_IMAGE:-apache/airflow:slim-3.1.7-python3.12}
   image: etl-airflow:3.1.7
+  user: "${AIRFLOW_UID:-50000}:0"
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY is required}
     AIRFLOW__API__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY is required}
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_WEBSERVER_SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY is required}
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?AIRFLOW_FERNET_KEY is required}
     DB_HOST: postgres
     DB_PORT: "5432"
@@ -33,7 +36,7 @@ x-airflow-common: &airflow-common
     - ./src:/opt/airflow/src
     - ./config:/opt/airflow/config
     - ./data:/opt/airflow/data
-    - ./logs:/opt/airflow/logs
+    - airflow_logs:/opt/airflow/logs
   networks:
     - etl_net
 
@@ -60,6 +63,7 @@ services:
   airflow-init:
     <<: *airflow-common
     container_name: airflow_init
+    user: "0:0"
     restart: "no"
     environment:
       <<: *airflow-common-env
@@ -72,6 +76,8 @@ services:
       - bash
       - -ec
       - |
+        mkdir -p /opt/airflow/logs
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs
         airflow db migrate
         airflow users create \
           --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
@@ -115,8 +121,25 @@ services:
       retries: 5
       start_period: 30s
 
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: airflow_dag_processor
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname $$HOSTNAME"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 volumes:
   postgres_data:
+  airflow_logs:
 
 networks:
   etl_net:
