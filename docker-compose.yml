@@ -8,8 +8,10 @@ x-airflow-common: &airflow-common
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY is required}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY:?AIRFLOW_WEBSERVER_SECRET_KEY is required}
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?AIRFLOW_FERNET_KEY is required}
     DB_HOST: postgres
     DB_PORT: "5432"
@@ -26,6 +28,12 @@ x-airflow-common: &airflow-common
   depends_on:
     postgres:
       condition: service_healthy
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./config:/opt/airflow/config
+    - ./data:/opt/airflow/data
+    - ./logs:/opt/airflow/logs
   networks:
     - etl_net
 
@@ -60,15 +68,18 @@ services:
       _AIRFLOW_WWW_USER_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Airflow}
       _AIRFLOW_WWW_USER_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-Admin}
       _AIRFLOW_WWW_USER_EMAIL: ${AIRFLOW_ADMIN_EMAIL:?AIRFLOW_ADMIN_EMAIL is required}
-    command: >
-      bash -c "airflow db migrate &&
-               airflow users create
-                 --username $${_AIRFLOW_WWW_USER_USERNAME}
-                 --password $${_AIRFLOW_WWW_USER_PASSWORD}
-                 --firstname $${_AIRFLOW_WWW_USER_FIRSTNAME}
-                 --lastname $${_AIRFLOW_WWW_USER_LASTNAME}
-                 --role Admin
-                 --email $${_AIRFLOW_WWW_USER_EMAIL} || true"
+    command:
+      - bash
+      - -ec
+      - |
+        airflow db migrate
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD}" \
+          --firstname "$${_AIRFLOW_WWW_USER_FIRSTNAME}" \
+          --lastname "$${_AIRFLOW_WWW_USER_LASTNAME}" \
+          --role Admin \
+          --email "$${_AIRFLOW_WWW_USER_EMAIL}"
 
   airflow-webserver:
     <<: *airflow-common
@@ -78,11 +89,11 @@ services:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
-    command: webserver
+    command: api-server
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/api/v2/monitor/health')\""]
       interval: 20s
       timeout: 10s
       retries: 5
