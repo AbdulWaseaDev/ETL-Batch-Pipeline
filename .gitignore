@@ -71,6 +71,7 @@ logs/
 # Data files
 *.parquet
 output/
+*.csv
 
 # OS files
 Thumbs.db
