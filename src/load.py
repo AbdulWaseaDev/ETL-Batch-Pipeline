@@ -37,6 +37,50 @@ def _connect_with_retry(max_attempts=3):
     raise last_error
 
 
+def _ensure_target_table(cur, table_name):
+    # Serialize DDL by table name to avoid concurrent CREATE TABLE races.
+    cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (table_name,))
+    cur.execute("SELECT to_regclass(%s)", (table_name,))
+    table_exists = cur.fetchone()[0] is not None
+    if table_exists:
+        return
+
+    cur.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_type t
+            JOIN pg_namespace n ON n.oid = t.typnamespace
+            WHERE t.typname = %s
+              AND n.nspname = current_schema()
+        )
+        """,
+        (table_name,),
+    )
+    conflicting_type_exists = cur.fetchone()[0]
+    if conflicting_type_exists:
+        raise RuntimeError(
+            f"Cannot create table '{table_name}' because a PostgreSQL type with the same "
+            "name already exists in the current schema. Rename DB_TABLE or drop/rename the "
+            "conflicting type."
+        )
+
+    target_table = sql.Identifier(table_name)
+    cur.execute(
+        sql.SQL(
+            """
+            CREATE TABLE {} (
+                user_id INT,
+                post_id INT PRIMARY KEY,
+                title TEXT,
+                body TEXT,
+                ingestion_time TIMESTAMP
+            )
+            """
+        ).format(target_table)
+    )
+
+
 def load_to_postgres():
     with open("config/config.yaml") as f:
         config = yaml.safe_load(f)
@@ -52,21 +96,8 @@ def load_to_postgres():
     conn = _connect_with_retry()
     try:
         with conn.cursor() as cur:
+            _ensure_target_table(cur, table_name)
             target_table = sql.Identifier(table_name)
-
-            cur.execute(
-                sql.SQL(
-                    """
-                CREATE TABLE IF NOT EXISTS {} (
-                    user_id INT,
-                    post_id INT PRIMARY KEY,
-                    title TEXT,
-                    body TEXT,
-                    ingestion_time TIMESTAMP
-                )
-            """
-                ).format(target_table)
-            )
 
             cur.execute(
                 """

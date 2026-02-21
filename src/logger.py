@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 def get_logger(name):
     logger = logging.getLogger(name)
@@ -9,7 +10,8 @@ def get_logger(name):
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    stream_handler = logging.StreamHandler()
+    # Airflow tags stderr lines as ERROR; emit INFO/DEBUG logs to stdout instead.
+    stream_handler = logging.StreamHandler(stream=sys.stdout)
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 

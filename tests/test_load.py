@@ -9,6 +9,7 @@ class FakeCursor:
     def __init__(self):
         self.executed = []
         self.copied = []
+        self.fetchone_results = []
 
     def __enter__(self):
         return self
@@ -16,8 +17,18 @@ class FakeCursor:
     def __exit__(self, exc_type, exc, tb):
         return False
 
-    def execute(self, query):
-        self.executed.append(str(query))
+    def execute(self, query, params=None):
+        self.executed.append((str(query), params))
+        query_text = str(query)
+        if "to_regclass" in query_text:
+            self.fetchone_results.append((None,))
+        elif "SELECT EXISTS" in query_text:
+            self.fetchone_results.append((False,))
+
+    def fetchone(self):
+        if not self.fetchone_results:
+            return (None,)
+        return self.fetchone_results.pop(0)
 
     def copy_expert(self, sql_statement, file_obj):
         self.copied.append((sql_statement, file_obj.read()))

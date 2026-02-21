@@ -8,12 +8,13 @@ The pipeline:
 3. Uploads processed CSV to Amazon S3
 4. Loads data incrementally into PostgreSQL using `COPY` + upsert
 
-## Quick Start (5 commands)
+## Quick Start (Commands)
 ```powershell
 Copy-Item .env.example .env
 # Fill .env with real secrets/credentials before continuing
 docker compose --env-file .env up airflow-init
 docker compose --env-file .env up -d --build
+docker compose --env-file .env down
 docker compose --env-file .env exec airflow-scheduler airflow dags trigger batch_etl_pipeline
 docker compose --env-file .env logs airflow-scheduler --tail=120
 ```
